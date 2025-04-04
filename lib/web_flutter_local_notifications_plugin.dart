@@ -91,12 +91,18 @@ class WebFlutterLocalNotificationsPlugin {
 
   //* PRIVATE METHODS ----------------------------------------------------
   void _checkInitialNotification() {
-    final uri = Uri.parse(window.location.href);
-    final payload = uri.queryParameters['notification_payload'];
-    if (payload != null && _onNotificationClickCallback != null) {
-      _onNotificationClickCallback!(payload);
-      // Clean the URL
-      window.history.replaceState(null, '', window.location.pathname);
+    try {
+      final uri = Uri.parse(window.location.href);
+      final payload = uri.queryParameters['notification_payload'];
+      if (payload != null && _onNotificationClickCallback != null) {
+        // Only process if this is a new window (no referrer)
+        if (document.referrer.isEmpty) {
+          _onNotificationClickCallback!(payload);
+        }
+        window.history.replaceState(null, '', window.location.pathname);
+      }
+    } catch (e) {
+      print('Error checking initial notification: $e');
     }
   }
 
@@ -105,19 +111,26 @@ class WebFlutterLocalNotificationsPlugin {
       'message',
       (Event event) {
         final messageEvent = event as MessageEvent;
-
-        // Convert JS data to Dart Map safely
         final jsData = messageEvent.data;
         if (jsData == null) return;
 
         try {
-          final data = (jsData).dartify() as Map<String, dynamic>?;
-          if (data != null &&
-              data['type'] == 'notificationClick' &&
-              data.containsKey('payload')) {
-            final payload = data['payload']?.toString();
-            if (_onNotificationClickCallback != null && payload != null) {
-              _onNotificationClickCallback!(payload);
+          final dynamic dartData = jsData.dartify();
+
+          // Safely handle the Map conversion
+          if (dartData is Map) {
+            // Convert keys and values to String/dynamic
+            final data = Map<String, dynamic>.fromEntries(
+              dartData.entries.map(
+                (e) => MapEntry(e.key?.toString() ?? '', e.value),
+              ),
+            );
+
+            if (data['type'] == 'notificationClick') {
+              final payload = data['payload']?.toString();
+              if (payload != null) {
+                _onNotificationClickCallback?.call(payload);
+              }
             }
           }
         } catch (e) {
