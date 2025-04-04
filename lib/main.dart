@@ -4,7 +4,12 @@ import 'package:web_local_notifications/web_flutter_local_notifications_plugin.d
 final webPlugin = WebFlutterLocalNotificationsPlugin();
 
 void main() async {
-  await webPlugin.initialize();
+  await webPlugin.initialize(
+    onNotificationClick: (String? payload) {
+      // Handle notification click
+      print('Notification clicked with payload: $payload');
+    },
+  );
   await webPlugin.requestNotificationsPermission();
   runApp(const MyApp());
 }
@@ -36,7 +41,12 @@ class MyHomePage extends StatefulWidget {
 
 class _MyHomePageState extends State<MyHomePage> {
   void _createLocalNotification() {
-    webPlugin.show(0, 'Hello World', 'This is a notification');
+    webPlugin.show(
+      0,
+      'Hello World',
+      'This is a notification',
+      payload: 'THIS IS A PAYLOAD',
+    );
   }
 
   @override

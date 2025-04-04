@@ -1,11 +1,11 @@
 import 'dart:convert';
 import 'dart:js_interop';
-
 import 'package:web/web.dart';
 
 /// Web implementation of the local notifications plugin.
 class WebFlutterLocalNotificationsPlugin {
   ServiceWorkerRegistration? _registration;
+  static Function(String?)? _onNotificationClickCallback;
 
   Future<void> show(
     int id,
@@ -30,22 +30,36 @@ class WebFlutterLocalNotificationsPlugin {
       );
     }
 
+    final jsData = ({'id': id, 'payload': payload}).jsify();
+    final options = NotificationOptions(
+      data: jsData,
+      actions: [NotificationAction(action: 'open', title: 'Open App')].toJS,
+    );
+
     await _registration!
-        .showNotification(title ?? 'This is a notification')
+        .showNotification(title ?? 'This is a notification', options)
         .toDart;
   }
 
   /// Initializes the plugin.
-  Future<bool?> initialize() async {
+  Future<bool?> initialize({Function(String?)? onNotificationClick}) async {
     _registration =
         await window.navigator.serviceWorker.getRegistration().toDart;
+
+    if (_registration != null) {
+      _onNotificationClickCallback = onNotificationClick;
+
+      // Check URL for notification payload on startup
+      _checkInitialNotification();
+
+      // Listen for future payloads via message channel
+      _setupMessageChannel();
+    }
+
     return _registration != null;
   }
 
   /// Requests notification permission from the browser.
-  ///
-  /// It is highly recommended and sometimes required that this be called only
-  /// in response to a user gesture, and not automatically.
   Future<bool> requestNotificationsPermission() async {
     final JSString result = await Notification.requestPermission().toDart;
     return result.toDart == 'granted';
@@ -74,11 +88,56 @@ class WebFlutterLocalNotificationsPlugin {
       notification.close();
     }
   }
+
+  //* PRIVATE METHODS ----------------------------------------------------
+  void _checkInitialNotification() {
+    final uri = Uri.parse(window.location.href);
+    final payload = uri.queryParameters['notification_payload'];
+    if (payload != null && _onNotificationClickCallback != null) {
+      _onNotificationClickCallback!(payload);
+      // Clean the URL
+      window.history.replaceState(null, '', window.location.pathname);
+    }
+  }
+
+  void _setupMessageChannel() {
+    window.navigator.serviceWorker.addEventListener(
+      'message',
+      (Event event) {
+        final messageEvent = event as MessageEvent;
+
+        // Convert JS data to Dart Map safely
+        final jsData = messageEvent.data;
+        if (jsData == null) return;
+
+        try {
+          final data = (jsData).dartify() as Map<String, dynamic>?;
+          if (data != null &&
+              data['type'] == 'notificationClick' &&
+              data.containsKey('payload')) {
+            final payload = data['payload']?.toString();
+            if (_onNotificationClickCallback != null && payload != null) {
+              _onNotificationClickCallback!(payload);
+            }
+          }
+        } catch (e) {
+          print('Error processing notification click: $e');
+        }
+      }.toJS,
+    );
+  }
 }
 
 extension on Notification {
   /// Gets the ID of the notification.
-  int? get id => jsonDecode(data.toString())?['id'];
+  int? get id {
+    try {
+      final data = jsonDecode(this.data.toString());
+      return data?['id'];
+    } catch (e) {
+      return null;
+    }
+  }
 }
 
 extension on ServiceWorkerRegistration {
