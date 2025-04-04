@@ -2,17 +2,22 @@ self.addEventListener('notificationclick', (event) => {
     event.notification.close();
     const payload = event.notification.data?.payload;
     
+    // Get the current origin from the registration scope
+    const currentOrigin = new URL(self.registration.scope).origin;
+    
     event.waitUntil(
       clients.matchAll({
         type: 'window',
-        includeUncontrolled: true  // Important for PWA detection
+        includeUncontrolled: true
       }).then((clientList) => {
-        // Check if there's already a window open
+        // Find existing client matching our origin
         const existingClient = clientList.find(client => {
-          // Match your PWA's URL pattern
-          return client.url.startsWith('https://vigilantus.us') || 
-                 client.url.startsWith('https://localhost:') ||
-                 client.url.startsWith('http://localhost:');
+          try {
+            const clientUrl = new URL(client.url);
+            return clientUrl.origin === currentOrigin;
+          } catch (e) {
+            return false;
+          }
         });
   
         if (existingClient) {
@@ -21,11 +26,11 @@ self.addEventListener('notificationclick', (event) => {
           // Send the payload to the existing window
           existingClient.postMessage({
             type: 'notificationClick',
-            payload:  JSON.stringify(payload)
+            payload: JSON.stringify(payload)
           });
         } else {
           // Open new window only if no existing one found
-          return clients.openWindow('/?notification_payload=' + 
+          return clients.openWindow(currentOrigin + '/?notification_payload=' + 
             encodeURIComponent(payload || ''));
         }
       })
